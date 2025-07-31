@@ -1,0 +1,72 @@
+RMAN SCRIPT
+
+cat rman_backup.rman
+RUN
+{
+  ALLOCATE CHANNEL c1 DEVICE TYPE DISK FORMAT '/u01/backups/db_%U.bkp';
+  BACKUP DATABASE PLUS ARCHIVELOG;
+  RELEASE CHANNEL c1;
+}
+
+
+
+PYTHON AUTOMATION SCRIPT
+------------------------
+
+at upload_rman_to_s3.py
+import os
+import boto3
+import logging
+from datetime import datetime
+
+# Config
+backup_dir = "/u01/backups"
+bucket_name = "my-oraclebackup-bucket"
+log_file = "/u01/backup_upload.log"
+
+# Set up logging
+logging.basicConfig(filename=log_file, level=logging.INFO,
+                    format='%(asctime)s %(levelname)s:%(message)s')
+
+# Initialize S3
+s3 = boto3.client('s3')
+
+def upload_backups():
+    for file_name in os.listdir(backup_dir):
+        if file_name.endswith(".bkp"):
+            file_path = os.path.join(backup_dir, file_name)
+            s3_key = f"{datetime.today().strftime('%Y-%m-%d')}/{file_name}"
+            try:
+                logging.info(f"Uploading {file_name} to S3...")
+                s3.upload_file(file_path, bucket_name, s3_key)
+                logging.info(f"Uploaded {file_name}")
+                # Optional: Remove file after upload
+                # os.remove(file_path)
+                # logging.info(f"Deleted local file {file_name}")
+            except Exception as e:
+                logging.error(f"Failed to upload {file_name}: {str(e)}")
+
+if __name__ == "__main__":
+    upload_backups()
+
+
+BASH SHELL SCRIPT
+------------------------------
+
+cat backup.sh
+#!/bin/bash
+# backup_and_upload.sh
+
+# Set Oracle env variables if needed
+export ORACLE_SID=XE
+export ORACLE_HOME=/opt/oracle/product/21c/dbhomeXE
+export PATH=$ORACLE_HOME/bin:$PATH
+# Run RMAN
+rman target / cmdfile=/u01/rman_backup.rman log=/u01/rman.log
+
+# Run Python Script
+python3 /u01/upload_rman_to_s3.py
+
+----------------------------------------------------------
+
+Note- Download aws cli , python, install boto3 
